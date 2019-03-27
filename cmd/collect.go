@@ -3,10 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	"github.com/bitrise-io/github-license-collector/analyzers"
+	"github.com/bitrise-io/github-license-collector/analyzers/golang"
+	"github.com/bitrise-io/github-license-collector/analyzers/npm"
+	"github.com/bitrise-io/github-license-collector/analyzers/ruby"
 	"github.com/bitrise-io/go-utils/command"
 	"github.com/bitrise-io/go-utils/log"
 	"github.com/bitrise-io/go-utils/pathutil"
@@ -15,6 +18,16 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 )
+
+type analyzer interface {
+	AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error)
+}
+
+var analyzerTools = []analyzer{
+	golang.Analyzer{},
+	npm.Analyzer{},
+	ruby.Analyzer{},
+}
 
 // collectCmd represents the collect command
 var collectCmd = &cobra.Command{
@@ -54,10 +67,6 @@ func collect(cmd *cobra.Command, args []string) error {
 	githubPersonalAccessToken := os.Getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 	if len(githubPersonalAccessToken) < 1 {
 		return errors.New("GITHUB_PERSONAL_ACCESS_TOKEN env var isn't specified")
-	}
-	licensedBinaryPath := os.Getenv("LICENSED_BINARY_PATH")
-	if len(githubPersonalAccessToken) < 1 {
-		return errors.New("LICENSED_BINARY_PATH env var isn't specified")
 	}
 
 	ctx := context.Background()
@@ -99,9 +108,8 @@ func collect(cmd *cobra.Command, args []string) error {
 
 	repoChan := make(chan repo)
 	for _, aRepo := range allRepos {
-
 		go func(r *github.Repository) {
-			fmt.Println(" start clone:", r.GetSSHURL())
+			log.Infof("Start clone: %s", r.GetSSHURL())
 
 			goPath := filepath.Join("github.com", r.GetFullName())
 			fullPath := filepath.Join(tempPath, "src", goPath)
@@ -112,7 +120,7 @@ func collect(cmd *cobra.Command, args []string) error {
 			}
 
 			repoChan <- repo{r.GetURL(), fullPath}
-			fmt.Println(" cloned:", r.GetSSHURL(), fullPath)
+			log.Donef("Cloned: %s - %s", r.GetSSHURL(), fullPath)
 		}(aRepo)
 	}
 
@@ -120,41 +128,26 @@ func collect(cmd *cobra.Command, args []string) error {
 	for {
 		r := <-repoChan
 
-		licenceCachePath := filepath.Join(r.path, "licence-cache")
-		cfgFilePath := filepath.Join(licenceCachePath, ".licensed.yml")
-
-		if err := os.MkdirAll(licenceCachePath, 0777); err != nil {
-			log.Errorf("Failed to cache licence in(%s), error: %s", r.path, err)
-			goto end
+		for _, a := range analyzerTools {
+			infos, err := a.AnalyzeRepository(r.url, r.path)
+			if err != nil {
+				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
+				continue
+			}
+			_ = infos
 		}
-		if err := ioutil.WriteFile(cfgFilePath, []byte(`cache_path: '`+licenceCachePath+`'`), 0777); err != nil {
-			log.Errorf("Failed to write file(%s), error: %s", cfgFilePath, err)
-			goto end
-		}
-		if err := os.Setenv("GOPATH", tempPath); err != nil {
-			log.Errorf("Failed to set env, error: %s", err)
-			goto end
-		}
-		if err := command.New("go", "get", "./...").SetDir(r.path).SetStderr(os.Stderr).SetStdout(os.Stdout).Run(); err != nil {
-			log.Errorf("Failed to go get, error: %s", err)
-		}
-		if err := command.New(licensedBinaryPath, "cache", "-c", cfgFilePath).SetDir(r.path).SetStderr(os.Stderr).SetStdout(os.Stdout).Run(); err != nil {
-			log.Errorf("Failed to run licensed, error: %s", err)
-			goto end
-		}
-
-	end:
 
 		processedRepos++
-		if processedRepos == len(allRepos) {
+		if len(allRepos) == processedRepos {
 			break
 		}
 	}
 
-	log.Donef("all repos(%d) cloned", len(allRepos))
+	log.Donef("repos scanned: %d", len(allRepos))
 	return nil
 }
 
 func cloneRepo(url, path string) error {
-	return command.New("git", "clone", "--depth", "1", url, path).SetStderr(os.Stderr).SetStdout(os.Stdout).Run()
+	out, err := command.New("git", "clone", "--depth", "1", url, path).RunAndReturnTrimmedCombinedOutput()
+	return errors.Wrap(err, out)
 }
