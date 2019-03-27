@@ -1,6 +1,7 @@
 package ruby
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ func (a Analyzer) String() string {
 }
 
 func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error) {
+	log.Printf("AnalyzeRepository: %s", localSourcePath)
 	files, err := getGemDeps(localSourcePath)
 	if err != nil {
 		return analyzers.RepositoryLicenseInfos{}, nil
@@ -27,6 +29,8 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 		return analyzers.RepositoryLicenseInfos{}, nil
 	}
 
+	log.Printf("depToLicense: %s", depToLicenses)
+
 	licenses := []analyzers.LicenseInfo{}
 	for dep, licensesArray := range depToLicenses {
 		for _, licenseType := range licensesArray {
@@ -36,6 +40,8 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 			})
 		}
 	}
+
+	log.Printf("Licenses: %s", licenses)
 
 	if len(files) > 0 {
 		return analyzers.RepositoryLicenseInfos{
@@ -56,7 +62,7 @@ func getGemDeps(repoPath string) ([]string, error) {
 		if f.IsDir() && f.Name() == "vendor" {
 			return filepath.SkipDir
 		}
-		if !f.IsDir() && f.Name() == "Gemfile" {
+		if !f.IsDir() && f.Name() == "Gemfile.lock" {
 			gemFiles = append(gemFiles, path)
 		}
 		return nil
