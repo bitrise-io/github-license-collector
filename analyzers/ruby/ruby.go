@@ -2,9 +2,6 @@ package ruby
 
 import (
 	"log"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/bitrise-io/github-license-collector/analyzers"
 )
@@ -19,13 +16,10 @@ func (a Analyzer) String() string {
 
 func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error) {
 	log.Printf("AnalyzeRepository: %s", localSourcePath)
-	files, err := getGemDeps(localSourcePath)
-	if err != nil {
-		return analyzers.RepositoryLicenseInfos{}, nil
-	}
 
-	depToLicenses, err := GetGemDeps(localSourcePath)
+	lockFiles, depToLicenses, err := GetGemDeps(localSourcePath)
 	if err != nil {
+		log.Printf("Ruby error: %s", err)
 		return analyzers.RepositoryLicenseInfos{}, nil
 	}
 
@@ -43,32 +37,12 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 
 	log.Printf("Licenses: %s", licenses)
 
-	if len(files) > 0 {
+	if len(lockFiles) > 0 {
 		return analyzers.RepositoryLicenseInfos{
-			RepositoryURL: strings.Join(files, ";"),
+			RepositoryURL: lockFiles[0],
 			Licenses:      licenses,
 		}, nil
 	}
 
 	return analyzers.RepositoryLicenseInfos{}, nil
-}
-
-func getGemDeps(repoPath string) ([]string, error) {
-	gemFiles := []string{}
-	err := filepath.Walk(repoPath, func(path string, f os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if f.IsDir() && f.Name() == "vendor" {
-			return filepath.SkipDir
-		}
-		if !f.IsDir() && f.Name() == "Gemfile.lock" {
-			gemFiles = append(gemFiles, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return gemFiles, nil
 }

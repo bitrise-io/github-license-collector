@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,16 +15,19 @@ import (
 )
 
 // GetGemDeps ...
-func GetGemDeps(repoPath string) (map[string][]string, error) {
+func GetGemDeps(repoPath string) ([]string, map[string][]string, error) {
 	lockFiles, err := getGemlockFiles(repoPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if lockFiles != nil {
+		log.Printf("lockFiles: %s", lockFiles)
 	}
 	allDeps := map[string][]string{}
 	for _, lockFile := range lockFiles {
 		deps, err := parseLockfile(lockFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, dep := range deps {
 			allDeps[dep] = nil
@@ -33,12 +37,12 @@ func GetGemDeps(repoPath string) (map[string][]string, error) {
 	for dep := range allDeps {
 		licenses, err := getLicensesForGem(dep)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		allDeps[dep] = licenses
 		time.Sleep(time.Millisecond * 500)
 	}
-	return allDeps, nil
+	return lockFiles, allDeps, nil
 }
 
 func getGemlockFiles(repoPath string) ([]string, error) {
@@ -62,7 +66,7 @@ func getGemlockFiles(repoPath string) ([]string, error) {
 }
 
 func parseLockfile(gemlockPath string) ([]string, error) {
-	cmd := command.New("ruby", "parseGemlock.rb", gemlockPath)
+	cmd := command.New("ruby", "./analyzers/ruby/parseGemlock.rb", gemlockPath)
 
 	output, err := cmd.RunAndReturnTrimmedOutput()
 	if err != nil {
