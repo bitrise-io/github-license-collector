@@ -15,7 +15,6 @@ import (
 func init() {
 	cmd := command.New("npm", "install", "-g", "yarn")
 
-	log.Printf("$ %s", cmd.PrintableCommandArgs())
 	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
 	if err != nil {
 		if errorutil.IsExitStatusError(err) {
@@ -26,7 +25,6 @@ func init() {
 			os.Exit(1)
 		}
 	}
-	log.Donef("$ %s", cmd.PrintableCommandArgs())
 }
 
 type npmLicensesList struct {
@@ -54,8 +52,6 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 	}
 
 	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
-
-	log.Printf("$ %s", cmd.PrintableCommandArgs())
 	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
 	if err != nil {
 		if errorutil.IsExitStatusError(err) {
@@ -64,8 +60,6 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", err)
 		}
 	}
-	log.Printf(out)
-	log.Donef("$ %s", cmd.PrintableCommandArgs())
 
 	var licenses npmLicensesList
     if err := json.Unmarshal([]byte(out), &licenses); err != nil {
@@ -77,11 +71,11 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
         headIndexes[strings.ToLower(header)] = i
     }
 
-	licenseInfos := analyzers.RepositoryLicenseInfos{}
+	licenseInfos := analyzers.RepositoryLicenseInfos{RepositoryURL: repoURL}
     for _, lic := range licenses.Data.Body {
 		licenseInfos.Licenses = append(licenseInfos.Licenses, analyzers.LicenseInfo{
 			LicenseType: lic[headIndexes["license"]],
-			Dependency: lic[headIndexes["url"]],
+			Dependency: lic[headIndexes["name"]],
 		})
 	}
 	log.Donef("analyze npm deps")
