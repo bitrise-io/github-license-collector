@@ -148,7 +148,7 @@ func collect(cmd *cobra.Command, args []string) error {
 			if info.RepositoryURL != "" {
 				allInfos = append(allInfos, info)
 				typeMap[a.String()]++
-				typeURLs[a.String()] = append(typeURLs[a.String()], strings.Split(info.RepositoryURL, ";")...)
+				typeURLs[a.String()] = append(typeURLs[a.String()], info.RepositoryURL)
 				other = false
 			}
 
