@@ -99,6 +99,18 @@ func fetchLicences(rootDir, rootPackage string) (map[string]string, string, erro
 	}
 
 	out, err := command.
+		New("go", "get", "./...").
+		AppendEnvs("GOPATH=" + os.Getenv("TMP_GOPATH")).
+		SetDir(rootDir).
+		RunAndReturnTrimmedCombinedOutput()
+	if err != nil {
+		if errorutil.IsExitStatusError(err) {
+			return nil, "", errors.New(out)
+		}
+		return nil, "", err
+	}
+
+	out, err = command.
 		New("licenses", "./...").
 		AppendEnvs("GOPATH=" + os.Getenv("TMP_GOPATH")).
 		SetDir(rootDir).
