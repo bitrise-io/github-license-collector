@@ -56,7 +56,7 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 	}
 	log.Donef("$ %s", cmd.PrintableCommandArgs())
 		
-	cmd = command.New("yarn", "licenses")
+	cmd = command.New("yarn", "licenses", "list")
 
 	log.Printf("$ %s", cmd.PrintableCommandArgs())
 	out, err = cmd.RunAndReturnTrimmedCombinedOutput()
