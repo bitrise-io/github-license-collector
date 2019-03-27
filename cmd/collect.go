@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bitrise-io/github-license-collector/analyzers"
 	"github.com/bitrise-io/github-license-collector/analyzers/golang"
@@ -21,12 +22,13 @@ import (
 
 type analyzer interface {
 	AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error)
+	String() string
 }
 
 var analyzerTools = []analyzer{
-	golang.Analyzer{},
-	npm.Analyzer{},
-	ruby.Analyzer{},
+	golang.Analyzer{Name: "golang"},
+	npm.Analyzer{Name: "npm"},
+	ruby.Analyzer{Name: "ruby"},
 }
 
 // collectCmd represents the collect command
@@ -125,16 +127,30 @@ func collect(cmd *cobra.Command, args []string) error {
 	}
 
 	processedRepos := 0
+	var others []string
+	typeMap := map[string]int{}
+	typeURLs := map[string][]string{}
+	for _, a := range analyzerTools {
+		typeMap[a.String()] = 0
+		typeURLs[a.String()] = []string{}
+	}
 	for {
 		r := <-repoChan
-
+		other := true
 		for _, a := range analyzerTools {
 			infos, err := a.AnalyzeRepository(r.url, r.path)
 			if err != nil {
 				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
 				continue
 			}
-			_ = infos
+			if infos.RepositoryURL != "" {
+				typeMap[a.String()]++
+				typeURLs[a.String()] = append(typeURLs[a.String()], strings.Split(infos.RepositoryURL, ";")...)
+				other = false
+			}
+		}
+		if other {
+			others = append(others, r.path)
 		}
 
 		processedRepos++
@@ -144,6 +160,12 @@ func collect(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Donef("repos scanned: %d", len(allRepos))
+	for _, a := range analyzerTools {
+		log.Infof("%s: %d", a.String(), typeMap[a.String()])
+		log.Printf("- %s", strings.Join(typeURLs[a.String()], "\n- "))
+	}
+	log.Infof("other: %d", len(others))
+	log.Printf("- %s", strings.Join(others, "\n- "))
 	return nil
 }
 
