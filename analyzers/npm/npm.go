@@ -1,9 +1,9 @@
 package npm
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/bitrise-io/github-license-collector/analyzers"
@@ -29,6 +29,16 @@ func init() {
 	log.Donef("$ %s", cmd.PrintableCommandArgs())
 }
 
+type npmLicensesList struct {
+    Type string `json:"type"`
+    Data Data   `json:"data"`
+}
+
+type Data struct {
+    Head []string   `json:"head"`
+    Body [][]string `json:"body"`
+}
+
 type Analyzer struct {
 	Name string
 }
@@ -43,7 +53,7 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("change to source dir %s: %s", localSourcePath, err)
 	}
 
-	cmd := command.New("yarn", "install")
+	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
 
 	log.Printf("$ %s", cmd.PrintableCommandArgs())
 	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
@@ -54,51 +64,27 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", err)
 		}
 	}
-	log.Donef("$ %s", cmd.PrintableCommandArgs())
-		
-	cmd = command.New("yarn", "licenses", "list")
-
-	log.Printf("$ %s", cmd.PrintableCommandArgs())
-	out, err = cmd.RunAndReturnTrimmedCombinedOutput()
-	if err != nil {
-		if errorutil.IsExitStatusError(err) {
-			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", out)
-		} else {
-			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", err)
-		}
-	}
 	log.Printf(out)
 	log.Donef("$ %s", cmd.PrintableCommandArgs())
 
+	var licenses npmLicensesList
+    if err := json.Unmarshal([]byte(out), &licenses); err != nil {
+        return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("unmarshal yarn licenses output: %s", err)
+    }
+
+    headIndexes := map[string]int{}
+    for i, header := range licenses.Data.Head {
+        headIndexes[strings.ToLower(header)] = i
+    }
+
+	licenseInfos := analyzers.RepositoryLicenseInfos{}
+    for _, lic := range licenses.Data.Body {
+		licenseInfos.Licenses = append(licenseInfos.Licenses, analyzers.LicenseInfo{
+			LicenseType: lic[headIndexes["license"]],
+			Dependency: lic[headIndexes["url"]],
+		})
+	}
 	log.Donef("analyze npm deps")
 
-	files, err := getNpmDeps(localSourcePath)
-	if err != nil {
-		return analyzers.RepositoryLicenseInfos{}, nil
-	}
-
-	if len(files) > 0 {
-		return analyzers.RepositoryLicenseInfos{RepositoryURL: strings.Join(files, ";")}, nil
-	}
-	return analyzers.RepositoryLicenseInfos{}, nil
-}
-
-func getNpmDeps(repoPath string) ([]string, error) {
-	gemFiles := []string{}
-	err := filepath.Walk(repoPath, func(path string, f os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if f.IsDir() && f.Name() == "vendor" {
-			return filepath.SkipDir
-		}
-		if !f.IsDir() && f.Name() == "package.json" {
-			gemFiles = append(gemFiles, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return gemFiles, nil
+	return licenseInfos, nil
 }
