@@ -107,6 +107,7 @@ func collect(cmd *cobra.Command, args []string) error {
 		log.Errorf("Failed to create temp path, error: %s", err)
 		os.Exit(1)
 	}
+	os.Setenv("TMP_GOPATH", tempPath)
 
 	repoChan := make(chan repo)
 	for _, aRepo := range allRepos {
