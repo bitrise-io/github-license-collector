@@ -40,7 +40,7 @@ func GetGemDeps(repoPath string) ([]string, map[string][]string, error) {
 			return nil, nil, err
 		}
 		allDeps[dep] = licenses
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Millisecond * 100)
 	}
 	return lockFiles, allDeps, nil
 }
