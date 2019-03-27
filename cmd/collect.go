@@ -3,9 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 
+	"github.com/bitrise-io/go-utils/command"
+	"github.com/bitrise-io/go-utils/log"
+	"github.com/bitrise-io/go-utils/pathutil"
 	"github.com/google/go-github/github"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -51,6 +55,10 @@ func collect(cmd *cobra.Command, args []string) error {
 	if len(githubPersonalAccessToken) < 1 {
 		return errors.New("GITHUB_PERSONAL_ACCESS_TOKEN env var isn't specified")
 	}
+	licensedBinaryPath := os.Getenv("LICENSED_BINARY_PATH")
+	if len(githubPersonalAccessToken) < 1 {
+		return errors.New("LICENSED_BINARY_PATH env var isn't specified")
+	}
 
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -61,6 +69,7 @@ func collect(cmd *cobra.Command, args []string) error {
 
 	opt := &github.RepositoryListByOrgOptions{Type: "all"}
 	// get all pages of results
+	log.Infof("fetching list of repos")
 	var allRepos []*github.Repository
 	for {
 		repos, resp, err := client.Repositories.ListByOrg(context.Background(), flagOrg, opt)
@@ -74,10 +83,78 @@ func collect(cmd *cobra.Command, args []string) error {
 		opt.Page = resp.NextPage
 	}
 
-	fmt.Printf("repos: %#v", allRepos)
-	for _, aRepo := range allRepos {
-		fmt.Printf("* %+v", aRepo)
+	log.Donef("done")
+	fmt.Println()
+
+	log.Infof("cloning repos")
+	type repo struct {
+		url, path string
 	}
-	log.Printf("repos.count: %d", len(allRepos))
+
+	tempPath, err := pathutil.NormalizedOSTempDirPath("temp")
+	if err != nil {
+		log.Errorf("Failed to create temp path, error: %s", err)
+		os.Exit(1)
+	}
+
+	repoChan := make(chan repo)
+	for _, aRepo := range allRepos {
+
+		go func(r *github.Repository) {
+			fmt.Println(" start clone:", r.GetSSHURL())
+
+			goPath := filepath.Join("github.com", r.GetFullName())
+			fullPath := filepath.Join(tempPath, "src", goPath)
+
+			if err := cloneRepo(r.GetSSHURL(), fullPath); err != nil {
+				log.Errorf("Failed to clone repo(%s), error: %s", r.GetSSHURL(), err)
+				os.Exit(1)
+			}
+
+			repoChan <- repo{r.GetURL(), fullPath}
+			fmt.Println(" cloned:", r.GetSSHURL(), fullPath)
+		}(aRepo)
+	}
+
+	processedRepos := 0
+	for {
+		r := <-repoChan
+
+		licenceCachePath := filepath.Join(r.path, "licence-cache")
+		cfgFilePath := filepath.Join(licenceCachePath, ".licensed.yml")
+
+		if err := os.MkdirAll(licenceCachePath, 0777); err != nil {
+			log.Errorf("Failed to cache licence in(%s), error: %s", r.path, err)
+			goto end
+		}
+		if err := ioutil.WriteFile(cfgFilePath, []byte(`cache_path: '`+licenceCachePath+`'`), 0777); err != nil {
+			log.Errorf("Failed to write file(%s), error: %s", cfgFilePath, err)
+			goto end
+		}
+		if err := os.Setenv("GOPATH", tempPath); err != nil {
+			log.Errorf("Failed to set env, error: %s", err)
+			goto end
+		}
+		if err := command.New("go", "get", "./...").SetDir(r.path).SetStderr(os.Stderr).SetStdout(os.Stdout).Run(); err != nil {
+			log.Errorf("Failed to go get, error: %s", err)
+		}
+		if err := command.New(licensedBinaryPath, "cache", "-c", cfgFilePath).SetDir(r.path).SetStderr(os.Stderr).SetStdout(os.Stdout).Run(); err != nil {
+			log.Errorf("Failed to run licensed, error: %s", err)
+			goto end
+		}
+
+	end:
+
+		processedRepos++
+		if processedRepos == len(allRepos) {
+			break
+		}
+	}
+
+	log.Donef("all repos(%d) cloned", len(allRepos))
 	return nil
+}
+
+func cloneRepo(url, path string) error {
+	return command.New("git", "clone", "--depth", "1", url, path).SetStderr(os.Stderr).SetStdout(os.Stdout).Run()
 }
