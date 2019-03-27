@@ -130,6 +130,7 @@ func collect(cmd *cobra.Command, args []string) error {
 	var others []string
 	typeMap := map[string]int{}
 	typeURLs := map[string][]string{}
+	var allInfos []analyzers.RepositoryLicenseInfos
 	for _, a := range analyzerTools {
 		typeMap[a.String()] = 0
 		typeURLs[a.String()] = []string{}
@@ -138,19 +139,22 @@ func collect(cmd *cobra.Command, args []string) error {
 		r := <-repoChan
 		other := true
 		for _, a := range analyzerTools {
-			infos, err := a.AnalyzeRepository(r.url, r.path)
+			info, err := a.AnalyzeRepository(r.url, r.path)
 			if err != nil {
 				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
+				processedRepos++
 				continue
 			}
-			if infos.RepositoryURL != "" {
+			if info.RepositoryURL != "" {
+				allInfos = append(allInfos, info)
 				typeMap[a.String()]++
-				typeURLs[a.String()] = append(typeURLs[a.String()], strings.Split(infos.RepositoryURL, ";")...)
+				typeURLs[a.String()] = append(typeURLs[a.String()], strings.Split(info.RepositoryURL, ";")...)
 				other = false
 			}
+
 		}
 		if other {
-			others = append(others, r.path)
+			others = append(others, r.url)
 		}
 
 		processedRepos++
@@ -166,6 +170,28 @@ func collect(cmd *cobra.Command, args []string) error {
 	}
 	log.Infof("other: %d", len(others))
 	log.Printf("- %s", strings.Join(others, "\n- "))
+
+	fmt.Println()
+
+	log.Infof("repository dependency licenses:")
+	licenceTypes := map[string]int{}
+	for _, info := range allInfos {
+		if len(info.Licenses) == 0 {
+			continue
+		}
+		log.Infof("%s:", info.RepositoryURL)
+		for _, dep := range info.Licenses {
+			log.Printf("- %s: %s", dep.Dependency, dep.LicenseType)
+			licenceTypes[dep.LicenseType]++
+		}
+	}
+
+	fmt.Println()
+
+	log.Infof("licence types (# of dependency uses):")
+	for lType, used := range licenceTypes {
+		log.Printf("- %s: %d", lType, used)
+	}
 	return nil
 }
 
