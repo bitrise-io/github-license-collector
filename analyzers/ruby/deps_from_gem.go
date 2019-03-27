@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,9 +19,9 @@ func GetGemDeps(repoPath string) ([]string, map[string][]string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if lockFiles != nil {
-		log.Printf("lockFiles: %s", lockFiles)
-	}
+	// if lockFiles != nil {
+	// 	log.Printf("lockFiles: %s", lockFiles)
+	// }
 	allDeps := map[string][]string{}
 	for _, lockFile := range lockFiles {
 		deps, err := parseLockfile(lockFile)
@@ -92,7 +91,7 @@ func getLicensesForGem(gem string) ([]string, error) {
 		return nil, nil
 	}
 	licensesKey := result[0]["licenses"]
-	fmt.Println(licensesKey)
+	// fmt.Println(licensesKey)
 	if licensesKey == nil {
 		return nil, nil
 	}
