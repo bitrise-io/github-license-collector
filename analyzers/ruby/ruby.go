@@ -22,8 +22,26 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 		return analyzers.RepositoryLicenseInfos{}, nil
 	}
 
+	depToLicenses, err := GetGemDeps(localSourcePath)
+	if err != nil {
+		return analyzers.RepositoryLicenseInfos{}, nil
+	}
+
+	licenses := []analyzers.LicenseInfo{}
+	for dep, licensesArray := range depToLicenses {
+		for _, licenseType := range licensesArray {
+			licenses = append(licenses, analyzers.LicenseInfo{
+				Dependency:  dep,
+				LicenseType: licenseType,
+			})
+		}
+	}
+
 	if len(files) > 0 {
-		return analyzers.RepositoryLicenseInfos{RepositoryURL: strings.Join(files, ";")}, nil
+		return analyzers.RepositoryLicenseInfos{
+			RepositoryURL: strings.Join(files, ";"),
+			Licenses:      licenses,
+		}, nil
 	}
 
 	return analyzers.RepositoryLicenseInfos{}, nil
