@@ -49,6 +49,7 @@ to quickly create a Cobra application.`,
 var (
 	flagOrg        string
 	reposCachePath = "repos-cache"
+	outputFilePath = "output.txt"
 )
 
 func init() {
@@ -197,15 +198,26 @@ func collect(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 
-	log.Infof("repository dependency licenses:")
+	outputFile, err := os.Create(outputFilePath)
+	if err != nil {
+		return errors.Wrap(err, "failed to create output file")
+	}
+	log.Infof("Repository dependency licenses:")
+	fmt.Fprintln(outputFile, "# Repository dependency licenses:")
+
 	licenceTypes := map[string]int{}
 	for _, info := range allInfos {
+		log.Infof("\n%s:", info.RepositoryURL)
+		fmt.Fprintf(outputFile, "\n## %s:\n", info.RepositoryURL)
 		if len(info.Licenses) == 0 {
+			log.Infof("No license info found")
+			fmt.Fprintf(outputFile, "No license info found\n")
 			continue
 		}
-		log.Infof("%s:", info.RepositoryURL)
+
 		for _, dep := range info.Licenses {
 			log.Printf("- %s: %s", dep.Dependency, dep.LicenseType)
+			fmt.Fprintf(outputFile, "- %s: %s\n", dep.Dependency, dep.LicenseType)
 			licenceTypes[dep.LicenseType]++
 		}
 	}
