@@ -161,12 +161,14 @@ func collect(cmd *cobra.Command, args []string) error {
 		typeMap[a.String()] = 0
 		typeURLs[a.String()] = []string{}
 	}
+	failedAnalyzes := []repo{}
 	for _, r := range reposList {
 		other := true
 		for _, a := range analyzerTools {
 			info, err := a.AnalyzeRepository(r.url, r.path)
 			if err != nil {
 				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
+				failedAnalyzes = append(failedAnalyzes, r)
 				processedRepos++
 				continue
 			}
@@ -195,6 +197,12 @@ func collect(cmd *cobra.Command, args []string) error {
 	}
 	log.Infof("other: %d", len(others))
 	log.Printf("- %s", strings.Join(others, "\n- "))
+
+	fmt.Println()
+	log.Infof("failed: %d", len(failedAnalyzes))
+	for _, aFailed := range failedAnalyzes {
+		log.Printf("- %s: %s", aFailed.url, aFailed.path)
+	}
 
 	fmt.Println()
 
