@@ -150,8 +150,8 @@ func collect(cmd *cobra.Command, args []string) error {
 	failedAnalyzes := []repo{}
 	for _, r := range reposList {
 		other := true
+		log.Printf("Check repo: %s", r.url)
 		for _, a := range analyzerTools {
-			log.Printf("Check repo: %s", r.url)
 			if detected, err := a.Detect(r.url, r.path); err != nil {
 				log.Errorf("failed to detect analyzer(%s) for: %s, error: %s", a.String(), r.url, err)
 				failedAnalyzes = append(failedAnalyzes, r)

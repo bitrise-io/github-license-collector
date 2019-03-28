@@ -19,3 +19,18 @@ Now you can run the `collect` command to collect all the repos of a specified Gi
 ```
 github-license-collector collect --org=GitHubOrgName
 ```
+
+### Requirements
+- Node 10, `brew install node@10`
+- Yarn, `npm install -g yarn`
+- Get go packages, `go get ./...`
+
+### Analyzers
+
+Each analyzer has a **Detect** logic in which it can decide if the given repository source is matching for the type it is looking for. The detected phase's description can be found in each analyzer's readme.
+
+Also all analyzer have an **AnalyzeRepository** logic which will try to fetch all the dependencies from the project and searches for its license type. They way it reads the list of dependencies is documented in the analyzers readme.
+
+- [NPM License Analyzer](/analyzers/npm)
+- [Go License Analyzer](/analyzers/golang)
+- [Ruby License Analyzer](/analyzers/ruby)
