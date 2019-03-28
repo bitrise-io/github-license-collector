@@ -3,6 +3,8 @@ github.com/bitrise-io/go-utils v0.0.0-20181112170818-2a09aab8380d h1:SM0cYv9EeTx
 github.com/bitrise-io/go-utils v0.0.0-20181112170818-2a09aab8380d/go.mod h1:Pp48eQd8BSNEzWWTBxdFUd/ufS5b5Bgkmt9D5NedjWg=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/godrei/licenses v0.0.0-20190328114914-8ff4557ce364 h1:QeyblNh6FGvx7xwA4OWxyfSrxcYI1RLB/gY+HJTtwQ0=
+github.com/godrei/licenses v0.0.0-20190328114914-8ff4557ce364/go.mod h1:Bhftq+b3qiDega9k/wsmjLUoTIelvi58dMWEYpZlWdM=
 github.com/golang/protobuf v1.2.0 h1:P3YflyNX/ehuJFLhxviNdFxQPkGK5cDcApsge1SqnvM=
 github.com/golang/protobuf v1.2.0/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
 github.com/google/go-github v17.0.0+incompatible h1:N0LgJ1j65A7kfXrZnUDaYCs/Sf4rEjNlfyDHW9dolSY=
