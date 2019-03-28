@@ -27,6 +27,8 @@ github-license-collector collect --org=GitHubOrgName
 
 ### Analyzers
 
+This tool will run all analyzers under the **/analyzers** directory.
+
 Each analyzer has a **Detect** logic in which it can decide if the given repository source is matching for the type it is looking for. The detected phase's description can be found in each analyzer's readme.
 
 Also all analyzer have an **AnalyzeRepository** logic which will try to fetch all the dependencies from the project and searches for its license type. They way it reads the list of dependencies is documented in the analyzers readme.
