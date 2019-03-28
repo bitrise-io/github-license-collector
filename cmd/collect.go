@@ -117,6 +117,13 @@ func collect(cmd *cobra.Command, args []string) error {
 	totalReposCount := len(allRepos)
 	reposList := make([]repo, totalReposCount, totalReposCount)
 
+	// create fil ehere to avoid later setdir chdir commands
+	outputFile, err := os.Create(outputFilePath)
+	if err != nil {
+		return errors.Wrap(err, "failed to create output file")
+	}
+	defer outputFile.Close()
+
 	os.Setenv("TMP_GOPATH", tempPath)
 
 	var wg sync.WaitGroup
@@ -196,10 +203,6 @@ func collect(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 
-	outputFile, err := os.Create(outputFilePath)
-	if err != nil {
-		return errors.Wrap(err, "failed to create output file")
-	}
 	log.Infof("Repository dependency licenses:")
 	fmt.Fprintln(outputFile, "# Repository dependency licenses:")
 
