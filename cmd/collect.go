@@ -149,7 +149,7 @@ func collect(cmd *cobra.Command, args []string) error {
 	}
 	// Wait for all git clones to finish
 	wg.Wait()
-	log.Println("Cloning repos finished, starting analyzing...")
+	log.Infof("Cloning repos finished, starting analyzing...")
 
 	processedRepos := 0
 	var others []string
