@@ -69,16 +69,24 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
 	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
 	if err != nil {
-		if errorutil.IsExitStatusError(err) {
-			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", out)
-		} else {
+		if !errorutil.IsExitStatusError(err) {
 			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", err)
 		}
 	}
 
 	var licenses npmLicensesList
-	if err := json.Unmarshal([]byte(out), &licenses); err != nil {
-		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("unmarshal yarn licenses output: %s", err)
+	for _, line := range strings.Split(out, "\n") {
+		var l npmLicensesList
+		if err := json.Unmarshal([]byte(line), &l); err != nil {
+			log.Warnf("unmarshal yarn licenses output: %s", err)
+		}
+		if l.Type == "table" {
+			licenses = l
+			break
+		}
+	}
+	if licenses.Type == "" {
+		return analyzers.RepositoryLicenseInfos{}, nil
 	}
 
 	headIndexes := map[string]int{}
