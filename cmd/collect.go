@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/bitrise-io/github-license-collector/analyzers"
 	"github.com/bitrise-io/github-license-collector/analyzers/golang"
 	"github.com/bitrise-io/github-license-collector/analyzers/npm"
 	"github.com/bitrise-io/github-license-collector/analyzers/ruby"
+	"github.com/bitrise-io/github-license-collector/utils"
 	"github.com/bitrise-io/go-utils/command"
 	"github.com/bitrise-io/go-utils/log"
 	"github.com/bitrise-io/go-utils/pathutil"
@@ -45,7 +47,8 @@ to quickly create a Cobra application.`,
 }
 
 var (
-	flagOrg string
+	flagOrg        string
+	reposCachePath = "repos-cache"
 )
 
 func init() {
@@ -102,30 +105,51 @@ func collect(cmd *cobra.Command, args []string) error {
 		url, path string
 	}
 
-	tempPath, err := pathutil.NormalizedOSTempDirPath("temp")
+	absReposCachePath, err := pathutil.AbsPath(reposCachePath)
 	if err != nil {
-		log.Errorf("Failed to create temp path, error: %s", err)
-		os.Exit(1)
+		return errors.WithStack(err)
 	}
+	// tempPath, err := pathutil.NormalizedOSTempDirPath("temp")
+	// if err != nil {
+	// 	return errors.Wrap(err, "Failed to create temp path")
+	// }
+	tempPath := absReposCachePath
 	os.Setenv("TMP_GOPATH", tempPath)
 
-	repoChan := make(chan repo)
+	totalReposCount := len(allRepos)
+	reposList := make([]repo, totalReposCount, totalReposCount)
+	var wg sync.WaitGroup
+	wg.Add(totalReposCount)
+	counter := utils.NewThreadSafeCounter()
 	for _, aRepo := range allRepos {
-		go func(r *github.Repository) {
+		gitCloneRepo := func(r *github.Repository) {
+			defer wg.Done()
 			log.Infof("Start clone: %s", r.GetSSHURL())
 
 			goPath := filepath.Join("github.com", r.GetFullName())
 			fullPath := filepath.Join(tempPath, "src", goPath)
 
-			if err := cloneRepo(r.GetSSHURL(), fullPath); err != nil {
-				log.Errorf("Failed to clone repo(%s), error: %s", r.GetSSHURL(), err)
-				os.Exit(1)
+			if exists, err := pathutil.IsPathExists(fullPath); err != nil {
+				log.Errorf("Failed to check if path (%s) exists: %+v", fullPath, err)
+			} else if exists {
+				log.Warnf("Path (%s) already exists - Skipping git clone", fullPath)
+			} else {
+				if err := cloneRepo(r.GetSSHURL(), fullPath); err != nil {
+					log.Errorf("Failed to clone repo(%s), error: %s", r.GetSSHURL(), err)
+					os.Exit(1)
+				}
 			}
 
-			repoChan <- repo{r.GetURL(), fullPath}
-			log.Donef("Cloned: %s - %s", r.GetSSHURL(), fullPath)
-		}(aRepo)
+			counerVal := counter.Increment()
+			reposList[counerVal-1] = repo{r.GetURL(), fullPath}
+			log.Donef("Cloned [%d/%d]: %s - %s", counerVal, totalReposCount, r.GetSSHURL(), fullPath)
+		}
+
+		go gitCloneRepo(aRepo)
 	}
+	// Wait for all git clones to finish
+	wg.Wait()
+	log.Println("Cloning repos finished, starting analyzing...")
 
 	processedRepos := 0
 	var others []string
@@ -136,8 +160,7 @@ func collect(cmd *cobra.Command, args []string) error {
 		typeMap[a.String()] = 0
 		typeURLs[a.String()] = []string{}
 	}
-	for {
-		r := <-repoChan
+	for _, r := range reposList {
 		other := true
 		for _, a := range analyzerTools {
 			info, err := a.AnalyzeRepository(r.url, r.path)
