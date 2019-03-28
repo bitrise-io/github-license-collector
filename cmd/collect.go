@@ -3,14 +3,33 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/bitrise-io/github-license-collector/analyzers"
+	"github.com/bitrise-io/github-license-collector/analyzers/golang"
+	"github.com/bitrise-io/github-license-collector/analyzers/npm"
+	"github.com/bitrise-io/github-license-collector/analyzers/ruby"
+	"github.com/bitrise-io/go-utils/command"
+	"github.com/bitrise-io/go-utils/log"
+	"github.com/bitrise-io/go-utils/pathutil"
 	"github.com/google/go-github/github"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 )
+
+type analyzer interface {
+	AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error)
+	String() string
+}
+
+var analyzerTools = []analyzer{
+	golang.Analyzer{Name: "golang"},
+	npm.Analyzer{Name: "npm"},
+	ruby.Analyzer{Name: "ruby"},
+}
 
 // collectCmd represents the collect command
 var collectCmd = &cobra.Command{
@@ -61,6 +80,7 @@ func collect(cmd *cobra.Command, args []string) error {
 
 	opt := &github.RepositoryListByOrgOptions{Type: "all"}
 	// get all pages of results
+	log.Infof("fetching list of repos")
 	var allRepos []*github.Repository
 	for {
 		repos, resp, err := client.Repositories.ListByOrg(context.Background(), flagOrg, opt)
@@ -74,10 +94,109 @@ func collect(cmd *cobra.Command, args []string) error {
 		opt.Page = resp.NextPage
 	}
 
-	fmt.Printf("repos: %#v", allRepos)
-	for _, aRepo := range allRepos {
-		fmt.Printf("* %+v", aRepo)
+	log.Donef("done")
+	fmt.Println()
+
+	log.Infof("cloning repos")
+	type repo struct {
+		url, path string
 	}
-	log.Printf("repos.count: %d", len(allRepos))
+
+	tempPath, err := pathutil.NormalizedOSTempDirPath("temp")
+	if err != nil {
+		log.Errorf("Failed to create temp path, error: %s", err)
+		os.Exit(1)
+	}
+	os.Setenv("TMP_GOPATH", tempPath)
+
+	repoChan := make(chan repo)
+	for _, aRepo := range allRepos {
+		go func(r *github.Repository) {
+			log.Infof("Start clone: %s", r.GetSSHURL())
+
+			goPath := filepath.Join("github.com", r.GetFullName())
+			fullPath := filepath.Join(tempPath, "src", goPath)
+
+			if err := cloneRepo(r.GetSSHURL(), fullPath); err != nil {
+				log.Errorf("Failed to clone repo(%s), error: %s", r.GetSSHURL(), err)
+				os.Exit(1)
+			}
+
+			repoChan <- repo{r.GetURL(), fullPath}
+			log.Donef("Cloned: %s - %s", r.GetSSHURL(), fullPath)
+		}(aRepo)
+	}
+
+	processedRepos := 0
+	var others []string
+	typeMap := map[string]int{}
+	typeURLs := map[string][]string{}
+	var allInfos []analyzers.RepositoryLicenseInfos
+	for _, a := range analyzerTools {
+		typeMap[a.String()] = 0
+		typeURLs[a.String()] = []string{}
+	}
+	for {
+		r := <-repoChan
+		other := true
+		for _, a := range analyzerTools {
+			info, err := a.AnalyzeRepository(r.url, r.path)
+			if err != nil {
+				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
+				processedRepos++
+				continue
+			}
+			if info.RepositoryURL != "" {
+				allInfos = append(allInfos, info)
+				typeMap[a.String()]++
+				typeURLs[a.String()] = append(typeURLs[a.String()], info.RepositoryURL)
+				other = false
+			}
+
+		}
+		if other {
+			others = append(others, r.url)
+		}
+
+		processedRepos++
+		if len(allRepos) == processedRepos {
+			break
+		}
+	}
+
+	log.Donef("repos scanned: %d", len(allRepos))
+	for _, a := range analyzerTools {
+		log.Infof("%s: %d", a.String(), typeMap[a.String()])
+		log.Printf("- %s", strings.Join(typeURLs[a.String()], "\n- "))
+	}
+	log.Infof("other: %d", len(others))
+	log.Printf("- %s", strings.Join(others, "\n- "))
+
+	fmt.Println()
+
+	log.Infof("repository dependency licenses:")
+	licenceTypes := map[string]int{}
+	for _, info := range allInfos {
+		if len(info.Licenses) == 0 {
+			continue
+		}
+		log.Infof("%s:", info.RepositoryURL)
+		for _, dep := range info.Licenses {
+			log.Printf("- %s: %s", dep.Dependency, dep.LicenseType)
+			licenceTypes[dep.LicenseType]++
+		}
+	}
+
+	fmt.Println()
+
+	log.Infof("licence types (# of dependency uses):")
+	for lType, used := range licenceTypes {
+		log.Printf("- %s: %d", lType, used)
+	}
 	return nil
+}
+
+func cloneRepo(url, path string) error {
+	out, err := command.New("git", "clone", "--depth", "1", url, path).RunAndReturnTrimmedCombinedOutput()
+	return errors.Wrap(err, out)
 }
