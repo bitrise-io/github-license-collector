@@ -228,7 +228,7 @@ func collect(cmd *cobra.Command, args []string) error {
 		log.Printf("- %s: %d", lType, used)
 		allLicenceUsage += used
 	}
-	log.Printf("%d licences used")
+	log.Printf("%d licences used", allLicenceUsage)
 	return nil
 }
 
