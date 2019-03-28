@@ -2,6 +2,7 @@ module github.com/bitrise-io/github-license-collector
 
 require (
 	github.com/bitrise-io/go-utils v0.0.0-20181112170818-2a09aab8380d
+	github.com/godrei/licenses v0.0.0-20190328114914-8ff4557ce364
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
