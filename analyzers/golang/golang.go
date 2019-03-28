@@ -1,6 +1,3 @@
-// this analyser utilizes: https://github.com/pmezard/licenses, which tool uses go list command to list the used dependencies
-// licenses tool lists the licence of the root package, this is filtered out
-// ? means that no licence found for the given repository
 package golang
 
 import (
@@ -8,10 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bitrise-io/go-utils/errorutil"
-
 	"github.com/bitrise-io/github-license-collector/analyzers"
 	"github.com/bitrise-io/go-utils/command"
+	"github.com/bitrise-io/go-utils/errorutil"
 	lic "github.com/godrei/licenses/licenses"
 )
 
@@ -29,7 +25,7 @@ func (a *Analyzer) Detect(repoURL, localSourcePath string) (bool, error) {
 	a.localSourcePath = localSourcePath
 	a.repoURL = repoURL
 
-	files, err := getGoDeps(localSourcePath)
+	files, err := getGoDepDescrptors(localSourcePath)
 	if err != nil {
 		return false, err
 	}
@@ -65,8 +61,8 @@ func (a Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error) 
 	}, err
 }
 
-func getGoDeps(repoPath string) ([]string, error) {
-	gemFiles := []string{}
+func getGoDepDescrptors(repoPath string) ([]string, error) {
+	depDescriptors := []string{}
 	err := filepath.Walk(repoPath, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -74,13 +70,13 @@ func getGoDeps(repoPath string) ([]string, error) {
 		if f.IsDir() && f.Name() == "vendor" {
 			return filepath.SkipDir
 		}
-		if !f.IsDir() && (f.Name() == "Gopkg.toml" || f.Name() == "Godeps.json") {
-			gemFiles = append(gemFiles, path)
+		if !f.IsDir() && (f.Name() == "Gopkg.toml" || f.Name() == "Godeps.json") || f.Name() == "go.mod" {
+			depDescriptors = append(depDescriptors, path)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return gemFiles, nil
+	return depDescriptors, nil
 }
