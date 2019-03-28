@@ -22,15 +22,20 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type repo struct {
+	url, path string
+}
+
 type analyzer interface {
-	AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error)
+	Detect(repoURL, localSourcePath string) (bool, error)
+	AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 	String() string
 }
 
 var analyzerTools = []analyzer{
-	golang.Analyzer{Name: "golang"},
-	npm.Analyzer{Name: "npm"},
-	ruby.Analyzer{Name: "ruby"},
+	&golang.Analyzer{},
+	&npm.Analyzer{},
+	&ruby.Analyzer{},
 }
 
 // collectCmd represents the collect command
@@ -102,52 +107,26 @@ func collect(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	log.Infof("cloning repos")
-	type repo struct {
-		url, path string
-	}
 
 	absReposCachePath, err := pathutil.AbsPath(reposCachePath)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	// tempPath, err := pathutil.NormalizedOSTempDirPath("temp")
-	// if err != nil {
-	// 	return errors.Wrap(err, "Failed to create temp path")
-	// }
-	tempPath := absReposCachePath
-	os.Setenv("TMP_GOPATH", tempPath)
 
+	tempPath := absReposCachePath
 	totalReposCount := len(allRepos)
 	reposList := make([]repo, totalReposCount, totalReposCount)
+
+	os.Setenv("TMP_GOPATH", tempPath)
+
 	var wg sync.WaitGroup
 	wg.Add(totalReposCount)
 	counter := utils.NewThreadSafeCounter()
+
 	for _, aRepo := range allRepos {
-		gitCloneRepo := func(r *github.Repository) {
-			defer wg.Done()
-			log.Infof("Start clone: %s", r.GetSSHURL())
-
-			goPath := filepath.Join("github.com", r.GetFullName())
-			fullPath := filepath.Join(tempPath, "src", goPath)
-
-			if exists, err := pathutil.IsPathExists(fullPath); err != nil {
-				log.Errorf("Failed to check if path (%s) exists: %+v", fullPath, err)
-			} else if exists {
-				log.Warnf("Path (%s) already exists - Skipping git clone", fullPath)
-			} else {
-				if err := cloneRepo(r.GetSSHURL(), fullPath); err != nil {
-					log.Errorf("Failed to clone repo(%s), error: %s", r.GetSSHURL(), err)
-					os.Exit(1)
-				}
-			}
-
-			counerVal := counter.Increment()
-			reposList[counerVal-1] = repo{r.GetURL(), fullPath}
-			log.Donef("Cloned [%d/%d]: %s - %s", counerVal, totalReposCount, r.GetSSHURL(), fullPath)
-		}
-
-		go gitCloneRepo(aRepo)
+		go gitCloneRepoAsync(aRepo, &wg, tempPath, counter, reposList, totalReposCount)
 	}
+
 	// Wait for all git clones to finish
 	wg.Wait()
 	log.Infof("Cloning repos finished, starting analyzing...")
@@ -165,21 +144,32 @@ func collect(cmd *cobra.Command, args []string) error {
 	for _, r := range reposList {
 		other := true
 		for _, a := range analyzerTools {
-			info, err := a.AnalyzeRepository(r.url, r.path)
+			log.Printf("Check repo: %s", r.url)
+			if detected, err := a.Detect(r.url, r.path); err != nil {
+				log.Errorf("failed to detect analyzer(%s) for: %s, error: %s", a.String(), r.url, err)
+				failedAnalyzes = append(failedAnalyzes, r)
+				continue
+			} else if !detected {
+				continue
+			}
+
+			log.Printf("- running %s analyzer", a.String())
+
+			info, err := a.AnalyzeRepository()
 			if err != nil {
 				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
 				failedAnalyzes = append(failedAnalyzes, r)
-				processedRepos++
 				continue
 			}
+
 			if info.RepositoryURL != "" {
 				allInfos = append(allInfos, info)
 				typeMap[a.String()]++
 				typeURLs[a.String()] = append(typeURLs[a.String()], info.RepositoryURL)
 				other = false
 			}
-
 		}
+
 		if other {
 			others = append(others, r.url)
 		}
@@ -233,13 +223,39 @@ func collect(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	log.Infof("licence types (# of dependency uses):")
+	allLicenceUsage := 0
 	for lType, used := range licenceTypes {
 		log.Printf("- %s: %d", lType, used)
+		allLicenceUsage += used
 	}
+	log.Printf("%d licences used")
 	return nil
 }
 
 func cloneRepo(url, path string) error {
 	out, err := command.New("git", "clone", "--depth", "1", url, path).RunAndReturnTrimmedCombinedOutput()
 	return errors.Wrap(err, out)
+}
+
+func gitCloneRepoAsync(r *github.Repository, wg *sync.WaitGroup, tempPath string, counter *utils.ThreadSafeCounter, reposList []repo, totalReposCount int) {
+	defer wg.Done()
+	log.Infof("Start clone: %s", r.GetSSHURL())
+
+	goPath := filepath.Join("github.com", r.GetFullName())
+	fullPath := filepath.Join(tempPath, "src", goPath)
+
+	if exists, err := pathutil.IsPathExists(fullPath); err != nil {
+		log.Errorf("Failed to check if path (%s) exists: %+v", fullPath, err)
+	} else if exists {
+		log.Warnf("Path (%s) already exists - Skipping git clone", fullPath)
+	} else {
+		if err := cloneRepo(r.GetSSHURL(), fullPath); err != nil {
+			log.Errorf("Failed to clone repo(%s), error: %s", r.GetSSHURL(), err)
+			os.Exit(1)
+		}
+	}
+
+	counerVal := counter.Increment()
+	reposList[counerVal-1] = repo{r.GetCloneURL(), fullPath}
+	log.Donef("Cloned [%d/%d]: %s - %s", counerVal, totalReposCount, r.GetSSHURL(), fullPath)
 }

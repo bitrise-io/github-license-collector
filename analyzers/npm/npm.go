@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/bitrise-io/github-license-collector/analyzers"
-	"github.com/bitrise-io/go-utils/log"
 	"github.com/bitrise-io/go-utils/command"
 	"github.com/bitrise-io/go-utils/errorutil"
+	"github.com/bitrise-io/go-utils/log"
 )
 
 func init() {
@@ -28,27 +29,41 @@ func init() {
 }
 
 type npmLicensesList struct {
-    Type string `json:"type"`
-    Data Data   `json:"data"`
+	Type string `json:"type"`
+	Data Data   `json:"data"`
 }
 
 type Data struct {
-    Head []string   `json:"head"`
-    Body [][]string `json:"body"`
+	Head []string   `json:"head"`
+	Body [][]string `json:"body"`
 }
 
 type Analyzer struct {
-	Name string
+	repoURL, localSourcePath string
 }
 
 func (a Analyzer) String() string {
-	return a.Name
+	return "npm"
 }
 
-func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error) {
+func (a *Analyzer) Detect(repoURL, localSourcePath string) (bool, error) {
+	a.repoURL, a.localSourcePath = repoURL, localSourcePath
 
-	if err := os.Chdir(localSourcePath); err != nil {
-		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("change to source dir %s: %s", localSourcePath, err)
+	files, err := getNpmDeps(a.localSourcePath)
+	if err != nil {
+		return false, err
+	}
+
+	if len(files) == 0 {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error) {
+	if err := os.Chdir(a.localSourcePath); err != nil {
+		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("change to source dir %s: %s", a.localSourcePath, err)
 	}
 
 	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
@@ -62,23 +77,46 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 	}
 
 	var licenses npmLicensesList
-    if err := json.Unmarshal([]byte(out), &licenses); err != nil {
-        return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("unmarshal yarn licenses output: %s", err)
-    }
+	if err := json.Unmarshal([]byte(out), &licenses); err != nil {
+		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("unmarshal yarn licenses output: %s", err)
+	}
 
-    headIndexes := map[string]int{}
-    for i, header := range licenses.Data.Head {
-        headIndexes[strings.ToLower(header)] = i
-    }
+	headIndexes := map[string]int{}
+	for i, header := range licenses.Data.Head {
+		headIndexes[strings.ToLower(header)] = i
+	}
 
-	licenseInfos := analyzers.RepositoryLicenseInfos{RepositoryURL: repoURL}
-    for _, lic := range licenses.Data.Body {
+	licenseInfos := analyzers.RepositoryLicenseInfos{}
+	for _, lic := range licenses.Data.Body {
 		licenseInfos.Licenses = append(licenseInfos.Licenses, analyzers.LicenseInfo{
 			LicenseType: lic[headIndexes["license"]],
-			Dependency: lic[headIndexes["name"]],
+			Dependency:  lic[headIndexes["name"]],
 		})
 	}
-	log.Donef("analyze npm deps")
+
+	if len(licenseInfos.Licenses) > 0 {
+		licenseInfos.RepositoryURL = a.repoURL
+	}
 
 	return licenseInfos, nil
+}
+
+func getNpmDeps(repoPath string) ([]string, error) {
+	gemFiles := []string{}
+	err := filepath.Walk(repoPath, func(path string, f os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if f.IsDir() && (f.Name() == "vendor" || f.Name() == "node_modules") {
+			return filepath.SkipDir
+		}
+		if !f.IsDir() && (f.Name() == "package.json" || f.Name() == "yarn.lock") {
+			gemFiles = append(gemFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return gemFiles, nil
 }

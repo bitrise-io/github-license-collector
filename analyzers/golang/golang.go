@@ -17,29 +17,35 @@ import (
 )
 
 type Analyzer struct {
-	Name string
+	repoURL, localSourcePath string
 }
 
 func (a Analyzer) String() string {
-	return a.Name
+	return "golang"
 }
 
-func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.RepositoryLicenseInfos, error) {
-	files, err := getGoDeps(localSourcePath)
+func (a *Analyzer) Detect(repoURL, localSourcePath string) (bool, error) {
+	a.repoURL, a.localSourcePath = repoURL, localSourcePath
+
+	files, err := getGoDeps(a.localSourcePath)
 	if err != nil {
-		return analyzers.RepositoryLicenseInfos{}, nil
+		return false, err
 	}
 
 	if len(files) == 0 {
-		return analyzers.RepositoryLicenseInfos{RepositoryURL: strings.Join(files, ";")}, nil
+		return false, nil
 	}
 
-	rootPackage, err := selfPackageName(localSourcePath)
+	return true, nil
+}
+
+func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error) {
+	rootPackage, err := selfPackageName(a.localSourcePath)
 	if err != nil {
 		return analyzers.RepositoryLicenseInfos{}, err
 	}
 
-	licByDep, warnings, err := fetchLicences(localSourcePath, rootPackage)
+	licByDep, warnings, err := fetchLicences(a.localSourcePath, rootPackage)
 	if err != nil {
 		return analyzers.RepositoryLicenseInfos{}, err
 	}
@@ -58,7 +64,7 @@ func (_ Analyzer) AnalyzeRepository(repoURL, localSourcePath string) (analyzers.
 		err = errors.New(warnings)
 	}
 	return analyzers.RepositoryLicenseInfos{
-		RepositoryURL: repoURL,
+		RepositoryURL: a.repoURL,
 		Licenses:      licences,
 	}, err
 }
