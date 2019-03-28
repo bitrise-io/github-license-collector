@@ -38,6 +38,12 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 
 	licenses := []analyzers.LicenseInfo{}
 	for dep, licensesArray := range depToLicenses {
+		if len(licensesArray) == 0 {
+			licenses = append(licenses, analyzers.LicenseInfo{
+				Dependency:  dep,
+				LicenseType: "UNKNOWN",
+			})
+		}
 		for _, licenseType := range licensesArray {
 			licenses = append(licenses, analyzers.LicenseInfo{
 				Dependency:  dep,
