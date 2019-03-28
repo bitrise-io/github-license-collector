@@ -49,6 +49,7 @@ to quickly create a Cobra application.`,
 var (
 	flagOrg        string
 	reposCachePath = "repos-cache"
+	outputFilePath = "output.txt"
 )
 
 func init() {
@@ -160,12 +161,14 @@ func collect(cmd *cobra.Command, args []string) error {
 		typeMap[a.String()] = 0
 		typeURLs[a.String()] = []string{}
 	}
+	failedAnalyzes := []repo{}
 	for _, r := range reposList {
 		other := true
 		for _, a := range analyzerTools {
 			info, err := a.AnalyzeRepository(r.url, r.path)
 			if err != nil {
 				log.Errorf("failed to analyze repo: %s, error: %s", r.url, err)
+				failedAnalyzes = append(failedAnalyzes, r)
 				processedRepos++
 				continue
 			}
@@ -196,16 +199,33 @@ func collect(cmd *cobra.Command, args []string) error {
 	log.Printf("- %s", strings.Join(others, "\n- "))
 
 	fmt.Println()
+	log.Infof("failed: %d", len(failedAnalyzes))
+	for _, aFailed := range failedAnalyzes {
+		log.Printf("- %s: %s", aFailed.url, aFailed.path)
+	}
 
-	log.Infof("repository dependency licenses:")
+	fmt.Println()
+
+	outputFile, err := os.Create(outputFilePath)
+	if err != nil {
+		return errors.Wrap(err, "failed to create output file")
+	}
+	log.Infof("Repository dependency licenses:")
+	fmt.Fprintln(outputFile, "# Repository dependency licenses:")
+
 	licenceTypes := map[string]int{}
 	for _, info := range allInfos {
+		log.Infof("\n%s:", info.RepositoryURL)
+		fmt.Fprintf(outputFile, "\n## %s:\n", info.RepositoryURL)
 		if len(info.Licenses) == 0 {
+			log.Infof("No license info found")
+			fmt.Fprintf(outputFile, "No license info found\n")
 			continue
 		}
-		log.Infof("%s:", info.RepositoryURL)
+
 		for _, dep := range info.Licenses {
 			log.Printf("- %s: %s", dep.Dependency, dep.LicenseType)
+			fmt.Fprintf(outputFile, "- %s: %s\n", dep.Dependency, dep.LicenseType)
 			licenceTypes[dep.LicenseType]++
 		}
 	}
