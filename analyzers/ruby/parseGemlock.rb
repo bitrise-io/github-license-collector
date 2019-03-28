@@ -1,19 +1,31 @@
-require "bundler"
+require 'bundler'
 
-path = $*[0]
-# puts path
+path = ARGV[0]
 
 base = File.dirname(path)
 Dir.chdir(base)
-file = File.open(path, "r")
+
+begin
+  file = File.open(path, 'r')
+rescue => exception
+  puts exception
+  exit 1
+end
+
 # puts file.read()
-bundle = Bundler::LockfileParser.new(Bundler.read_file(file))
+
+begin
+  bundle = Bundler::LockfileParser.new(Bundler.read_file(file))
+rescue => exception
+  puts exception
+  exit 1
+end
 
 gem_name_version_map = bundle.specs.map { |spec|
   [
     spec.name,
-    # spec.version.to_s,
+    spec.version.to_s,
   ]
 }
 
-STDOUT.puts gem_name_version_map.map { |pair| pair.join(" ") }
+STDOUT.puts (gem_name_version_map.map { |pair| pair.join(' ') })

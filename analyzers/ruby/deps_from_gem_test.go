@@ -37,7 +37,7 @@ func Test_parseLockfile(t *testing.T) {
 	tests := []struct {
 		name        string
 		gemlockPath string
-		want        []string
+		want        []gem
 		wantErr     bool
 	}{
 		{

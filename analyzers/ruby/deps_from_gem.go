@@ -13,6 +13,13 @@ import (
 	"github.com/bitrise-io/go-utils/command"
 )
 
+type gem struct {
+	name    string
+	version string
+}
+
+var licenseCache = make(map[string][]string)
+
 // GetGemDeps ...
 func GetGemDeps(repoPath string) ([]string, map[string][]string, error) {
 	lockFiles, err := getGemlockFiles(repoPath)
@@ -29,12 +36,12 @@ func GetGemDeps(repoPath string) ([]string, map[string][]string, error) {
 			return nil, nil, err
 		}
 		for _, dep := range deps {
-			allDeps[dep] = nil
+			allDeps[dep.name] = nil
 		}
 	}
 
 	for dep := range allDeps {
-		licenses, err := getLicensesForGem(dep)
+		licenses, err := cachedLicenseForGem(dep)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -64,16 +71,35 @@ func getGemlockFiles(repoPath string) ([]string, error) {
 	return gemFiles, nil
 }
 
-func parseLockfile(gemlockPath string) ([]string, error) {
+func parseLockfile(gemlockPath string) ([]gem, error) {
 	cmd := command.New("ruby", "./analyzers/ruby/parseGemlock.rb", gemlockPath)
+	// cmd := command.New("ruby", "./parseGemlock.rb", gemlockPath)
 
 	output, err := cmd.RunAndReturnTrimmedOutput()
 	if err != nil {
 		return nil, err
 	}
-	// fmt.Print(output)
 
-	return strings.Split(output, "\n"), nil
+	var gems []gem
+	deps := strings.Split(output, "\n")
+	for _, dep := range deps {
+		gemInfo := strings.Split(dep, " ")
+		gems = append(gems, gem{
+			name:    gemInfo[0],
+			version: gemInfo[1],
+		})
+	}
+
+	return gems, nil
+}
+
+func cachedLicenseForGem(gem string) ([]string, error) {
+	if val, ok := licenseCache[gem]; ok {
+		return val, nil
+	}
+	licenses, err := getLicensesForGem(gem)
+	licenseCache[gem] = licenses
+	return licenses, err
 }
 
 func getLicensesForGem(gem string) ([]string, error) {
