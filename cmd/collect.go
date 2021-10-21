@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,7 @@ var (
 	flagOrg        string
 	reposCachePath = "repos-cache"
 	outputFilePath = "output.txt"
+	batchSize      = 10
 )
 
 func init() {
@@ -126,16 +128,25 @@ func collect(cmd *cobra.Command, args []string) error {
 
 	os.Setenv("TMP_GOPATH", tempPath)
 
-	var wg sync.WaitGroup
-	wg.Add(totalReposCount)
 	counter := utils.NewThreadSafeCounter()
 
-	for _, aRepo := range allRepos {
-		go gitCloneRepoAsync(aRepo, &wg, tempPath, counter, reposList, totalReposCount)
+	for x := 0; x < int(math.Ceil(float64(totalReposCount)/float64(batchSize))); x++ {
+		log.Infof("Cloning batch: %d", x)
+		var wg sync.WaitGroup
+		wg.Add(batchSize)
+		for y := 0; y < batchSize; y++ {
+			idx := x*batchSize + y
+			if idx >= totalReposCount {
+				wg.Done()
+				continue
+			}
+			aRepo := allRepos[idx]
+			go gitCloneRepoAsync(aRepo, &wg, tempPath, counter, reposList, totalReposCount)
+		}
+		wg.Wait()
 	}
 
 	// Wait for all git clones to finish
-	wg.Wait()
 	log.Infof("Cloning repos finished, starting analyzing...")
 
 	processedRepos := 0
