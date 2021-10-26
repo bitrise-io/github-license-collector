@@ -8,7 +8,7 @@ go install github.com/bitrise-io/github-license-collector
 
 Usage:
 
-You have to set a GitHub Personal Access Token (https://github.com/settings/tokens), so that the tool can access private repos of the specified org:
+You have to set a GitHub Personal Access Token (https://github.com/settings/tokens - generate one with the full `repo` scope), so that the tool can access private repos of the specified org:
 
 ```
 export GITHUB_PERSONAL_ACCESS_TOKEN='..Personal Access Token..'
