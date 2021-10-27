@@ -13,6 +13,10 @@ import (
 	"github.com/bitrise-io/go-utils/log"
 )
 
+type npmLicensesListTypeOnly struct {
+	Type string `json:"type"`
+}
+
 type npmLicensesList struct {
 	Type string `json:"type"`
 	Data Data   `json:"data"`
@@ -48,7 +52,7 @@ func (a *Analyzer) Detect(repoURL, localSourcePath string) (bool, error) {
 
 func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error) {
 	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress").SetDir(a.localSourcePath)
-	out, err := cmd.RunAndReturnTrimmedOutput()
+	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
 	if err != nil {
 		if errorutil.IsExitStatusError(err) {
 			return analyzers.RepositoryLicenseInfos{}, errors.New(out)
@@ -58,11 +62,15 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 
 	var licenses npmLicensesList
 	for _, line := range strings.Split(out, "\n") {
-		var l npmLicensesList
-		if err := json.Unmarshal([]byte(line), &l); err != nil {
-			log.Warnf("unmarshal yarn licenses output: %s", err)
+		var lType npmLicensesListTypeOnly
+		if err := json.Unmarshal([]byte(line), &lType); err != nil {
+			log.Warnf("unmarshal yarn licenses type output: %s | line: %s", err, line)
 		}
-		if l.Type == "table" {
+		if lType.Type == "table" {
+			var l npmLicensesList
+			if err := json.Unmarshal([]byte(line), &l); err != nil {
+				log.Warnf("unmarshal yarn licenses data output: %s | line: %s", err, line)
+			}
 			licenses = l
 			break
 		}
