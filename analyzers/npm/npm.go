@@ -2,6 +2,7 @@ package npm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,21 +13,6 @@ import (
 	"github.com/bitrise-io/go-utils/errorutil"
 	"github.com/bitrise-io/go-utils/log"
 )
-
-func init() {
-	cmd := command.New("npm", "install", "-g", "yarn")
-
-	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
-	if err != nil {
-		if errorutil.IsExitStatusError(err) {
-			log.Errorf("run command: %s", out)
-			os.Exit(1)
-		} else {
-			log.Errorf("run command: %s", err)
-			os.Exit(1)
-		}
-	}
-}
 
 type npmLicensesList struct {
 	Type string `json:"type"`
@@ -69,9 +55,10 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
 	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
 	if err != nil {
-		if !errorutil.IsExitStatusError(err) {
-			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", err)
+		if errorutil.IsExitStatusError(err) {
+			return analyzers.RepositoryLicenseInfos{}, errors.New(out)
 		}
+		return analyzers.RepositoryLicenseInfos{}, err
 	}
 
 	var licenses npmLicensesList
