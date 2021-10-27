@@ -3,7 +3,6 @@ package npm
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,12 +47,8 @@ func (a *Analyzer) Detect(repoURL, localSourcePath string) (bool, error) {
 }
 
 func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error) {
-	if err := os.Chdir(a.localSourcePath); err != nil {
-		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("change to source dir %s: %s", a.localSourcePath, err)
-	}
-
-	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
-	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
+	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress").SetDir(a.localSourcePath)
+	out, err := cmd.RunAndReturnTrimmedOutput()
 	if err != nil {
 		if errorutil.IsExitStatusError(err) {
 			return analyzers.RepositoryLicenseInfos{}, errors.New(out)
