@@ -60,8 +60,20 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 		return analyzers.RepositoryLicenseInfos{}, err
 	}
 
+	licences, err := npmJSONsToLicenseInfos(out)
+	if err != nil {
+		return analyzers.RepositoryLicenseInfos{}, err
+	}
+
+	return analyzers.RepositoryLicenseInfos{
+		RepositoryURL: a.repoURL,
+		Licenses:      licences,
+	}, nil
+}
+
+func npmJSONsToLicenseInfos(npmJSONs string) ([]analyzers.LicenseInfo, error) {
 	var licenses npmLicensesList
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(npmJSONs, "\n") {
 		var lType npmLicensesListTypeOnly
 		if err := json.Unmarshal([]byte(line), &lType); err != nil {
 			log.Warnf("unmarshal yarn licenses type output: %s | line: %s", err, line)
@@ -76,7 +88,7 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 		}
 	}
 	if licenses.Type == "" {
-		return analyzers.RepositoryLicenseInfos{}, nil
+		return []analyzers.LicenseInfo{}, errors.New("no license information provided by yarn")
 	}
 
 	headIndexes := map[string]int{}
@@ -84,16 +96,16 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 		headIndexes[strings.ToLower(header)] = i
 	}
 
-	licenseInfos := analyzers.RepositoryLicenseInfos{}
+	licenseInfos := []analyzers.LicenseInfo{}
 	for _, lic := range licenses.Data.Body {
-		licenseInfos.Licenses = append(licenseInfos.Licenses, analyzers.LicenseInfo{
+		licenseInfos = append(licenseInfos, analyzers.LicenseInfo{
 			LicenseType: lic[headIndexes["license"]],
 			Dependency:  lic[headIndexes["name"]],
 		})
 	}
 
-	if len(licenseInfos.Licenses) > 0 {
-		licenseInfos.RepositoryURL = a.repoURL
+	if len(licenseInfos) < 1 {
+		return []analyzers.LicenseInfo{}, errors.New("0 license information found")
 	}
 
 	return licenseInfos, nil
