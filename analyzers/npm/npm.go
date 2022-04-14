@@ -2,7 +2,7 @@ package npm
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,19 +13,8 @@ import (
 	"github.com/bitrise-io/go-utils/log"
 )
 
-func init() {
-	cmd := command.New("npm", "install", "-g", "yarn")
-
-	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
-	if err != nil {
-		if errorutil.IsExitStatusError(err) {
-			log.Errorf("run command: %s", out)
-			os.Exit(1)
-		} else {
-			log.Errorf("run command: %s", err)
-			os.Exit(1)
-		}
-	}
+type npmLicensesListTypeOnly struct {
+	Type string `json:"type"`
 }
 
 type npmLicensesList struct {
@@ -62,31 +51,44 @@ func (a *Analyzer) Detect(repoURL, localSourcePath string) (bool, error) {
 }
 
 func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error) {
-	if err := os.Chdir(a.localSourcePath); err != nil {
-		return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("change to source dir %s: %s", a.localSourcePath, err)
-	}
-
-	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress")
+	cmd := command.New("yarn", "licenses", "list", "--json", "--no-progress").SetDir(a.localSourcePath)
 	out, err := cmd.RunAndReturnTrimmedCombinedOutput()
 	if err != nil {
-		if !errorutil.IsExitStatusError(err) {
-			return analyzers.RepositoryLicenseInfos{}, fmt.Errorf("run command: %s", err)
+		if errorutil.IsExitStatusError(err) {
+			return analyzers.RepositoryLicenseInfos{}, errors.New(out)
 		}
+		return analyzers.RepositoryLicenseInfos{}, err
 	}
 
+	licences, err := npmJSONsToLicenseInfos(out)
+	if err != nil {
+		return analyzers.RepositoryLicenseInfos{}, err
+	}
+
+	return analyzers.RepositoryLicenseInfos{
+		RepositoryURL: a.repoURL,
+		Licenses:      licences,
+	}, nil
+}
+
+func npmJSONsToLicenseInfos(npmJSONs string) ([]analyzers.LicenseInfo, error) {
 	var licenses npmLicensesList
-	for _, line := range strings.Split(out, "\n") {
-		var l npmLicensesList
-		if err := json.Unmarshal([]byte(line), &l); err != nil {
-			log.Warnf("unmarshal yarn licenses output: %s", err)
+	for _, line := range strings.Split(npmJSONs, "\n") {
+		var lType npmLicensesListTypeOnly
+		if err := json.Unmarshal([]byte(line), &lType); err != nil {
+			log.Warnf("unmarshal yarn licenses type output: %s | line: %s", err, line)
 		}
-		if l.Type == "table" {
+		if lType.Type == "table" {
+			var l npmLicensesList
+			if err := json.Unmarshal([]byte(line), &l); err != nil {
+				log.Warnf("unmarshal yarn licenses data output: %s | line: %s", err, line)
+			}
 			licenses = l
 			break
 		}
 	}
 	if licenses.Type == "" {
-		return analyzers.RepositoryLicenseInfos{}, nil
+		return []analyzers.LicenseInfo{}, errors.New("no license information provided by yarn")
 	}
 
 	headIndexes := map[string]int{}
@@ -94,16 +96,16 @@ func (a *Analyzer) AnalyzeRepository() (analyzers.RepositoryLicenseInfos, error)
 		headIndexes[strings.ToLower(header)] = i
 	}
 
-	licenseInfos := analyzers.RepositoryLicenseInfos{}
+	licenseInfos := []analyzers.LicenseInfo{}
 	for _, lic := range licenses.Data.Body {
-		licenseInfos.Licenses = append(licenseInfos.Licenses, analyzers.LicenseInfo{
+		licenseInfos = append(licenseInfos, analyzers.LicenseInfo{
 			LicenseType: lic[headIndexes["license"]],
 			Dependency:  lic[headIndexes["name"]],
 		})
 	}
 
-	if len(licenseInfos.Licenses) > 0 {
-		licenseInfos.RepositoryURL = a.repoURL
+	if len(licenseInfos) < 1 {
+		return []analyzers.LicenseInfo{}, errors.New("0 license information found")
 	}
 
 	return licenseInfos, nil

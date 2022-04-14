@@ -235,14 +235,18 @@ func collect(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
+	fmt.Fprintln(outputFile)
 
 	log.Infof("licence types (# of dependency uses):")
+	fmt.Fprintf(outputFile, "licence types (# of dependency uses):\n")
 	allLicenceUsage := 0
 	for lType, used := range licenceTypes {
 		log.Printf("- %s: %d", lType, used)
+		fmt.Fprintf(outputFile, "- %s: %d\n", lType, used)
 		allLicenceUsage += used
 	}
 	log.Printf("%d licences used", allLicenceUsage)
+	fmt.Fprintf(outputFile, "%d licences used\n", allLicenceUsage)
 	return nil
 }
 

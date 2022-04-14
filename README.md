@@ -17,13 +17,16 @@ export GITHUB_PERSONAL_ACCESS_TOKEN='..Personal Access Token..'
 Now you can run the `collect` command to collect all the repos of a specified GitHub Organization and then collect the licenses for all of those repos:
 
 ```
-github-license-collector collect --org=GitHubOrgName
+go install && github-license-collector collect --org=GitHubOrgName | tee log.txt
 ```
 
 ### Requirements
+
+- Go: `cd /tmp && go install -v github.com/google/go-licenses@master && cd -`
 - Node 10, `brew install node@10`
 - Yarn, `npm install -g yarn`
 - Get go packages, `go get ./...`
+- `tee` if you want to use the `tee` command in the example
 
 ### Analyzers
 
